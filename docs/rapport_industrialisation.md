@@ -64,18 +64,35 @@ pas le meilleur des trois.
 ### 3.3 Tests de charge (JMeter)
 
 Plan : `POST /predict`, montée en charge sur 10 secondes, 10 requêtes par utilisateur.
+API lancée dans son conteneur Docker (un seul processus Uvicorn), sur un Mac à 12 cœurs, le 9 novembre 2026.
 
-| Utilisateurs | Moyenne (ms) | Médiane (ms) | 90e centile (ms) | 95e centile (ms) | Débit (req/s) | Erreurs (%) |
-|---|---|---|---|---|---|---|
-| 100 | [__] | [__] | [__] | [__] | [__] | [__] |
-| 500 | [__] | [__] | [__] | [__] | [__] | [__] |
-| 1 000 | [__] | [__] | [__] | [__] | [__] | [__] |
+| Utilisateurs | Requêtes | Moyenne (ms) | Médiane (ms) | 90e centile (ms) | 95e centile (ms) | Débit (req/s) | Erreurs (%) |
+|---|---|---|---|---|---|---|---|
+| 100 | 1 000 | 1 234 | 887 | 2 646 | 2 826 | 35,7 | 0 |
+| 500 | 5 000 | 18 405 | 19 820 | 20 919 | 21 179 | 24,8 | 0 |
+| 1 000 | 10 000 | 35 825 | 38 312 | 39 357 | 39 540 | 26,0 | 0 |
 
-*À compléter avec `./tests/jmeter/run_load_tests.sh` (rapports dans `tests/jmeter/results/`).*
+*Mesures obtenues avec `./tests/jmeter/run_load_tests.sh`. Les rapports HTML détaillés sont générés
+dans `tests/jmeter/results/`.*
 
-**Analyse :** [à compléter après les mesures. Points à regarder : à partir de combien d'utilisateurs
-le temps de réponse se dégrade, si des erreurs apparaissent, et si le débit plafonne. L'API tourne avec
-un seul processus Uvicorn, donc un plafond est attendu (voir section 6).]
+**Analyse :**
+
+- **Aucune erreur**, même à 1 000 utilisateurs : les 16 000 requêtes ont toutes reçu une réponse 200.
+  Le service reste stable sous charge.
+- **Le débit plafonne autour de 25 requêtes par seconde**, quel que soit le nombre d'utilisateurs.
+  C'est la capacité maximale d'un seul processus Uvicorn qui exécute un Random Forest de 200 arbres :
+  chaque prédiction occupe le processeur environ 40 ms, et les requêtes sont traitées une par une.
+- **Le temps de réponse augmente avec la file d'attente, pas avec le calcul.** Une requête isolée prend
+  environ 15 à 50 ms. Sous charge, elle attend son tour : à 1 000 utilisateurs, la file contient
+  environ 1 000 requêtes, traitées à 26 par seconde, d'où environ 38 secondes d'attente (médiane : 38,3 s).
+- **La dégradation commence dès 100 utilisateurs** (médiane proche de 0,9 s). À 500 utilisateurs et plus,
+  le service n'est plus utilisable de façon interactive : une réponse en 20 à 40 secondes est trop lente.
+
+**Conclusion des tests de charge :** l'API est fiable mais pas dimensionnée pour plus de quelques dizaines
+de requêtes par seconde. Trois pistes pour augmenter le débit, détaillées en section 6 :
+lancer plusieurs processus Uvicorn (`--workers`) pour utiliser tous les cœurs ; n'appeler le modèle
+qu'une fois par requête (`predict_proba` suffit à déduire la classe, alors que l'API appelle aujourd'hui
+aussi `predict`, ce qui double le calcul) ; et ajouter des conteneurs derrière un répartiteur de charge.
 
 ---
 
