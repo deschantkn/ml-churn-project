@@ -12,6 +12,7 @@ on:
             - develop
 
 jobs:
+    # Tests unitaires + tests API (TestClient)
     test:
         runs-on: ubuntu-latest
 
@@ -22,7 +23,8 @@ jobs:
             - name: Python
               uses: actions/setup-python@v5
               with:
-                  python-version: "3.11"
+                  python-version: "3.14"
+                  cache: pip
 
             - name: Installation
               run: |
@@ -31,4 +33,65 @@ jobs:
 
             - name: Tests
               run: |
-                  pytest
+                  pytest -m "not e2e" -v
+
+    # Tests d'intégration E2E Selenium (API réellement démarrée + Chrome headless)
+    e2e:
+        runs-on: ubuntu-latest
+        needs: test
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.14"
+                  cache: pip
+
+            - name: Installation
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+
+            - name: Démarrage de l'API
+              run: |
+                  uvicorn api.main:app --host 127.0.0.1 --port 8000 &
+                  for i in $(seq 1 30); do
+                      curl -sf http://127.0.0.1:8000/health && exit 0
+                      sleep 1
+                  done
+                  echo "API non démarrée" && exit 1
+
+            - name: Tests Selenium
+              run: |
+                  pytest tests/test_selenium.py -v
+
+    # Build de l'image Docker + smoke test
+    docker:
+        runs-on: ubuntu-latest
+        needs: test
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Build Docker
+              run: |
+                  docker build -t ml-churn-api:${{ github.sha }} .
+
+            - name: Smoke test du conteneur
+              run: |
+                  docker run -d --name ml-churn-api -p 8000:8000 ml-churn-api:${{ github.sha }}
+                  for i in $(seq 1 30); do
+                      curl -sf http://localhost:8000/health && break
+                      sleep 1
+                  done
+                  curl -sf -X POST http://localhost:8000/predict \
+                      -H "Content-Type: application/json" \
+                      -d '{"age":35,"anciennete":5,"revenu":450000,"nb_reclamations":2,"montant_mensuel":25000,"retards_paiement":2}'
+
+            - name: Logs du conteneur
+              if: always()
+              run: docker logs ml-churn-api || true

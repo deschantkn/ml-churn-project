@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prédiction du churn</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; color: #222; }
+    h1 { font-size: 1.4rem; }
+    label { display: block; margin-top: 12px; font-size: .9rem; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; }
+    button { margin-top: 20px; padding: 10px 20px; font-size: 1rem; cursor: pointer; }
+    #result { margin-top: 20px; padding: 12px; border-radius: 6px; display: none; }
+    #result.churn { display: block; background: #fde2e2; }
+    #result.no_churn { display: block; background: #dff5e1; }
+    #result.error { display: block; background: #eee; }
+  </style>
+</head>
+<body>
+  <h1>Prédiction du churn client</h1>
+  <form id="predict-form">
+    <label>Âge <input id="age" name="age" type="number" value="35" required></label>
+    <label>Ancienneté (mois) <input id="anciennete" name="anciennete" type="number" value="5" required></label>
+    <label>Revenu <input id="revenu" name="revenu" type="number" value="450000" required></label>
+    <label>Nombre de réclamations <input id="nb_reclamations" name="nb_reclamations" type="number" value="2" required></label>
+    <label>Montant mensuel <input id="montant_mensuel" name="montant_mensuel" type="number" value="25000" required></label>
+    <label>Retards de paiement <input id="retards_paiement" name="retards_paiement" type="number" value="2" required></label>
+    <button id="predict-btn" type="submit">Prédire</button>
+  </form>
+  <div id="result"></div>
+
+  <script>
+    const fields = ["age", "anciennete", "revenu", "nb_reclamations", "montant_mensuel", "retards_paiement"];
+    document.getElementById("predict-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = {};
+      fields.forEach((f) => { payload[f] = Number(document.getElementById(f).value); });
+      const box = document.getElementById("result");
+      try {
+        const response = await fetch("/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const data = await response.json();
+        box.className = data.prediction === "CHURN" ? "churn" : "no_churn";
+        box.innerHTML =
+          '<strong id="prediction">' + data.prediction + "</strong><br>" +
+          'Probabilité : <span id="probability">' + data.probability + "</span><br>" +
+          "Modèle : " + data.model_version;
+      } catch (err) {
+        box.className = "error";
+        box.textContent = "Erreur : " + err.message;
+      }
+    });
+  </script>
+</body>
+</html>
